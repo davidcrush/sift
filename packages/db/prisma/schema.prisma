@@ -1,0 +1,132 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Provider {
+  gmail
+  outlook
+  proton
+}
+
+enum AccountStatus {
+  ok
+  needs_reauth
+  disabled
+}
+
+enum SummaryImportance {
+  low
+  med
+  high
+}
+
+enum SummaryBucket {
+  new
+  needs_response
+  waiting_response
+  archived
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  accounts  Account[]
+}
+
+model Account {
+  id           String        @id @default(cuid())
+  userId       String
+  provider     Provider
+  emailAddress String
+  status       AccountStatus @default(ok)
+  syncCursor   String?
+
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokens       ProviderToken?
+  emails       Email[]
+  threadSummaries ThreadSummary[]
+
+  @@unique([provider, emailAddress])
+  @@index([userId])
+}
+
+model ProviderToken {
+  id           String   @id @default(cuid())
+  accountId    String   @unique
+  accessToken  String?
+  refreshToken String?
+  expiresAt    DateTime?
+  scopes       String?
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  account      Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+}
+
+model Email {
+  id                String   @id @default(cuid())
+  accountId          String
+
+  providerMessageId  String
+  providerThreadId   String?
+  internalThreadKey  String
+
+  fromName           String?
+  fromEmail          String?
+  to                 Json?
+  cc                 Json?
+
+  subject            String?
+  snippet            String?
+  bodyText           String
+
+  sentAt             DateTime?
+  receivedAt         DateTime?
+
+  labels             Json?
+
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  account            Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, providerMessageId])
+  @@index([accountId, internalThreadKey])
+  @@index([accountId, receivedAt])
+}
+
+model ThreadSummary {
+  id                String            @id @default(cuid())
+  accountId          String
+  internalThreadKey  String
+  latestEmailAt      DateTime?
+
+  summaryJson        Json
+
+  model              String?
+  promptVersion      String?
+
+  importance         SummaryImportance
+  bucket             SummaryBucket
+
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  account            Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, internalThreadKey])
+  @@index([accountId, bucket, importance])
+  @@index([accountId, latestEmailAt])
+}
